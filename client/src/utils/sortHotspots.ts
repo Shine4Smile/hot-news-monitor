@@ -1,38 +1,86 @@
+/**
+ * 热点排序工具函数（前端版本，与 server/src/utils/sortHotspots.ts 逻辑一致）
+ */
+
 export interface SortableHotspot {
-  like_count: number | null;
-  view_count: number | null;
-  comment_count: number | null;
+  likeCount: number | null;
+  retweetCount: number | null;
+  viewCount: number | null;
   importance: string;
-  ai_score: number;
-  published_at: string | null;
-  created_at: string;
+  relevance: number;
+  publishedAt: Date | string | null;
+  createdAt: Date | string;
 }
 
-export const IMPORTANCE_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+export const IMPORTANCE_ORDER: Record<string, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
 
 export function calcHotScore(item: SortableHotspot): number {
-  const likes = item.like_count || 0;
-  const views = item.view_count || 0;
-  const comments = item.comment_count || 0;
-  return likes * 10 + comments * 5 + Math.log10(Math.max(views, 1)) * 2;
+  const likes = item.likeCount || 0;
+  const retweets = item.retweetCount || 0;
+  const views = item.viewCount || 0;
+  return likes * 10 + retweets * 5 + Math.log10(Math.max(views, 1)) * 2;
 }
 
-export function sortHotspots<T extends SortableHotspot>(items: T[], sortBy: string, sortOrder: 'asc' | 'desc' = 'desc'): T[] {
+export function compareImportance(a: SortableHotspot, b: SortableHotspot): number {
+  return (IMPORTANCE_ORDER[a.importance] ?? 4) - (IMPORTANCE_ORDER[b.importance] ?? 4);
+}
+
+function toTimestamp(d: Date | string | null): number {
+  if (!d) return 0;
+  return typeof d === 'string' ? new Date(d).getTime() : d.getTime();
+}
+
+export function sortHotspots<T extends SortableHotspot>(
+  items: T[],
+  sortBy: string,
+  sortOrder: 'asc' | 'desc' = 'desc'
+): T[] {
   const sorted = [...items];
   const desc = sortOrder === 'desc';
+
   sorted.sort((a, b) => {
     let result: number;
+
     switch (sortBy) {
-      case 'hot': result = calcHotScore(a) - calcHotScore(b); break;
-      case 'relevance': result = (a.ai_score || 0) - (b.ai_score || 0); break;
+      case 'publishedAt': {
+        const ta = toTimestamp(a.publishedAt);
+        const tb = toTimestamp(b.publishedAt);
+        result = ta - tb;
+        if (result === 0) {
+          result = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
+        }
+        break;
+      }
+
       case 'importance': {
-        result = (IMPORTANCE_ORDER[a.importance] ?? 4) - (IMPORTANCE_ORDER[b.importance] ?? 4);
-        if (result === 0) { result = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); return desc ? -result : result; }
+        result = compareImportance(a, b);
+        if (result === 0) {
+          result = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
+          return desc ? -(result) : result;
+        }
         return desc ? result : -result;
       }
-      default: result = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
+
+      case 'relevance':
+        result = a.relevance - b.relevance;
+        break;
+
+      case 'hot':
+        result = calcHotScore(a) - calcHotScore(b);
+        break;
+
+      default: // createdAt
+        result = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
+        break;
     }
-    return desc ? -result : result;
+
+    return desc ? -(result) : result;
   });
+
   return sorted;
 }

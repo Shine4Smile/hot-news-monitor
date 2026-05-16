@@ -1,61 +1,53 @@
-/**
- * 前端 API 服务层 — 适配后端 REST API
- */
-const BASE = '/api';
+const API_BASE = '/api';
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || `HTTP ${res.status}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json();
-}
-
-// ---- Types ----
 export interface Keyword {
-  id: number;
-  keyword: string;
-  category: string;
-  active: number;
-  created_at: string;
+  id: string;
+  text: string;
+  category: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { hotspots: number };
 }
 
 export interface Hotspot {
-  id: number;
+  id: string;
   title: string;
-  summary: string;
+  content: string;
+  url: string;
   source: string;
-  source_url: string;
-  keyword_match: string;
-  category: string;
-  ai_verified: number;
-  ai_score: number;
-  ai_summary: string;
-  is_fake: number;
-  keyword_mentioned: number;
-  importance: string;
-  relevance_reason: string;
-  view_count: number;
-  like_count: number;
-  comment_count: number;
-  published_at: string;
-  created_at: string;
-  keyword?: { id: number; text: string; category: string } | null;
+  sourceId: string | null;
+  isReal: boolean;
+  relevance: number;
+  relevanceReason: string | null;
+  keywordMentioned: boolean | null;
+  importance: 'low' | 'medium' | 'high' | 'urgent';
+  summary: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  retweetCount: number | null;
+  replyCount: number | null;
+  commentCount: number | null;
+  quoteCount: number | null;
+  danmakuCount: number | null;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorAvatar: string | null;
+  authorFollowers: number | null;
+  authorVerified: boolean | null;
+  publishedAt: string | null;
+  createdAt: string;
+  keyword: { id: string; text: string; category: string | null } | null;
 }
 
 export interface Notification {
-  id: number;
+  id: string;
   type: string;
   title: string;
-  message: string;
-  hotspot_id: number;
-  is_read: number;
-  created_at: string;
+  content: string;
+  isRead: boolean;
+  hotspotId: string | null;
+  createdAt: string;
 }
 
 export interface Stats {
@@ -65,47 +57,130 @@ export interface Stats {
   bySource: Record<string, number>;
 }
 
-// ---- Keywords API ----
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || 'Request failed');
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json();
+}
+
+// Keywords API
 export const keywordsApi = {
   getAll: () => request<Keyword[]>('/keywords'),
-  create: (keyword: string, category: string) =>
-    request<Keyword>('/keywords', { method: 'POST', body: JSON.stringify({ keyword, category }) }),
-  delete: (id: number) =>
+  
+  getById: (id: string) => request<Keyword>(`/keywords/${id}`),
+  
+  create: (data: { text: string; category?: string }) => 
+    request<Keyword>('/keywords', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
+  update: (id: string, data: Partial<Keyword>) => 
+    request<Keyword>(`/keywords/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  
+  delete: (id: string) => 
     request<void>(`/keywords/${id}`, { method: 'DELETE' }),
-  toggle: (id: number) =>
-    request<Keyword>(`/keywords/${id}`, { method: 'PUT', body: JSON.stringify({ active: 0 }) }),
+  
+  toggle: (id: string) => 
+    request<Keyword>(`/keywords/${id}/toggle`, { method: 'PATCH' })
 };
 
-// ---- Hotspots API ----
+// Hotspots API
 export const hotspotsApi = {
-  getAll: (params?: {
-    page?: number; limit?: number; source?: string; importance?: string;
-    sortBy?: string; sortOrder?: string; verified?: string;
+  getAll: (params?: { 
+    page?: number; 
+    limit?: number; 
+    source?: string; 
+    importance?: string; 
+    keywordId?: string;
+    isReal?: string;
+    timeRange?: string;
+    timeFrom?: string;
+    timeTo?: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => {
-    const sp = new URLSearchParams();
-    if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') sp.append(k, String(v)); });
-    return request<{ data: Hotspot[]; total: number; page: number; limit: number }>(`/hotspots?${sp}`);
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') searchParams.append(key, String(value));
+      });
+    }
+    return request<{ data: Hotspot[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/hotspots?${searchParams}`
+    );
   },
-  getStats: () => request<Stats>('/stats/hotspots'),
-  delete: (id: number) => request<void>(`/hotspots/${id}`, { method: 'DELETE' }),
+  
+  getStats: () => request<Stats>('/hotspots/stats'),
+  
+  getById: (id: string) => request<Hotspot>(`/hotspots/${id}`),
+  
+  search: (query: string, sources?: string[]) => 
+    request<{ results: Hotspot[] }>('/hotspots/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, sources })
+    }),
+  
+  delete: (id: string) => 
+    request<void>(`/hotspots/${id}`, { method: 'DELETE' })
 };
 
-// ---- Notifications API ----
+// Notifications API
 export const notificationsApi = {
-  getAll: (params?: { page?: number; limit?: number }) => {
-    const sp = new URLSearchParams();
-    if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined) sp.append(k, String(v)); });
-    return request<{ data: Notification[]; total: number }>(`/notifications?${sp}`);
+  getAll: (params?: { page?: number; limit?: number; unreadOnly?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) searchParams.append(key, String(value));
+      });
+    }
+    return request<{ data: Notification[]; unreadCount: number; pagination: any }>(
+      `/notifications?${searchParams}`
+    );
   },
-  markAsRead: (id: number) =>
-    request<void>(`/notifications/${id}/read`, { method: 'PUT' }),
-  markAllAsRead: () =>
-    request<void>('/notifications/read-all', { method: 'PUT' }),
-  getUnreadCount: () =>
-    request<{ count: number }>('/notifications/unread-count'),
-  delete: (id: number) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+  
+  markAsRead: (id: string) => 
+    request<Notification>(`/notifications/${id}/read`, { method: 'PATCH' }),
+  
+  markAllAsRead: () => 
+    request<void>('/notifications/read-all', { method: 'PATCH' }),
+  
+  delete: (id: string) => 
+    request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+  
+  clear: () => 
+    request<void>('/notifications', { method: 'DELETE' })
 };
 
-// ---- Trigger ----
-export const triggerHotspotCheck = () =>
-  request<{ message: string }>('/trigger/collect', { method: 'POST' });
+// Settings API
+export const settingsApi = {
+  getAll: () => request<Record<string, string>>('/settings'),
+  
+  update: (settings: Record<string, string>) => 
+    request<void>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
+};
+
+// Manual trigger
+export const triggerHotspotCheck = () => 
+  request<{ message: string }>('/check-hotspots', { method: 'POST' });

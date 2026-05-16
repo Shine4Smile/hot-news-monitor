@@ -1,53 +1,74 @@
-/**
- * SSE 事件监听（替代 WebSocket）
- * 适配前端需要的 onNewHotspot / onNotification 接口
- */
+import { io, Socket } from 'socket.io-client';
 
-type Callback = (data: any) => void;
+let socket: Socket | null = null;
 
-let es: EventSource | null = null;
-const hotspotCallbacks: Callback[] = [];
-const notifCallbacks: Callback[] = [];
+export function getSocket(): Socket {
+  if (!socket) {
+    socket = io(window.location.origin, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling']
+    });
 
-function ensureConnection() {
-  if (es && es.readyState === EventSource.OPEN) return;
-  es = new EventSource('/api/stream');
-  es.addEventListener('new-hotspot', (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      hotspotCallbacks.forEach((cb) => cb(data));
-    } catch {}
-  });
-  es.addEventListener('collect-done', (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      notifCallbacks.forEach((cb) => cb(data));
-    } catch {}
-  });
-  es.onerror = () => {
-    es?.close();
-    es = null;
-    setTimeout(ensureConnection, 5000);
-  };
+    socket.on('connect', () => {
+      console.log('🔌 Socket connected:', socket?.id);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('🔌 Socket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('🔌 Socket connection error:', error);
+    });
+  }
+
+  return socket;
 }
 
-export function onNewHotspot(cb: Callback) {
-  hotspotCallbacks.push(cb);
-  ensureConnection();
-  return () => {
-    const idx = hotspotCallbacks.indexOf(cb);
-    if (idx >= 0) hotspotCallbacks.splice(idx, 1);
-  };
+export function subscribeToKeywords(keywords: string[]): void {
+  const s = getSocket();
+  s.emit('subscribe', keywords);
 }
 
-export function onNotification(cb: Callback) {
-  notifCallbacks.push(cb);
-  ensureConnection();
-  return () => {
-    const idx = notifCallbacks.indexOf(cb);
-    if (idx >= 0) notifCallbacks.splice(idx, 1);
-  };
+export function unsubscribeFromKeywords(keywords: string[]): void {
+  const s = getSocket();
+  s.emit('unsubscribe', keywords);
 }
 
-/** No-op — SSE doesn't support keyword-based rooms */
-export function subscribeToKeywords(_keywords: string[]) {}
+export interface HotspotEvent {
+  id: string;
+  title: string;
+  content: string;
+  url: string;
+  source: string;
+  importance: string;
+  summary: string | null;
+  keyword?: { text: string } | null;
+}
+
+export interface NotificationEvent {
+  type: string;
+  title: string;
+  content: string;
+  hotspotId?: string;
+  importance?: string;
+}
+
+export function onNewHotspot(callback: (hotspot: HotspotEvent) => void): () => void {
+  const s = getSocket();
+  s.on('hotspot:new', callback);
+  return () => s.off('hotspot:new', callback);
+}
+
+export function onNotification(callback: (notification: NotificationEvent) => void): () => void {
+  const s = getSocket();
+  s.on('notification', callback);
+  return () => s.off('notification', callback);
+}
+
+export function disconnectSocket(): void {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
