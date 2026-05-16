@@ -1,0 +1,11 @@
+# Server-specific ignores
+# (Root .gitignore also applies — node_modules, .env, *.db, etc.)
+
+# TypeScript compiled output
+dist/
+
+# Data directory — SQLite files ignored by root *.db pattern,
+# but dir itself should be tracked so it exists on clone
+!data/
+data/*
+!data/.gitkeep
