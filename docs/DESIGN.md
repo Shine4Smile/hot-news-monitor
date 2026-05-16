@@ -194,102 +194,158 @@ model Setting {
 | `hotspot:new` | Server→Client | 新热点发现 |
 | `notification` | Server→Client | 新通知 |
 
-## 五、DeepSeek AI 对接
+## 五、DeepSeek AI 校验体系
 
-使用原生 `fetch` 直接调用（零依赖）：
-
-```typescript
-// server/src/services/ai.ts
-const DEEPSEEK_BASE = 'https://api.deepseek.com/v1/chat/completions';
-const DEEPSEEK_MODEL = 'deepseek-chat';
-
-async function callDeepSeek(messages, options) {
-  const res = await fetch(DEEPSEEK_BASE, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      messages,
-      temperature: options.temperature ?? 0.2,
-      max_tokens: options.maxTokens ?? 500
-    })
-  });
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-```
-
-### 功能 1：Query Expansion（查询扩展）
-
-输入关键词 → AI 生成 5-15 个变体 → 用于文本预匹配
-
-- 含原始词的各种写法、核心拆分、常见别称、中英文对照
-- 结果带 Map 缓存，同一关键词全局只调用一次 AI
-- 无 API Key 时回退为纯文本拆分
-
-### 功能 2：Content Analysis（内容分析）
-
-输入内容 + 关键词 + 预匹配结果 → AI 返回结构化 JSON：
-
-```json
-{
-  "isReal": true,           // 是否真实信息（非标题党/假新闻/营销软文）
-  "relevance": 85,          // 相关性 0-100
-  "relevanceReason": "...", // 打分理由
-  "keywordMentioned": true, // 是否直接提及关键词
-  "importance": "high",     // low/medium/high/urgent
-  "summary": "此内容与【关键词】的关联：..." // 关联说明
-}
-```
-
-### 过滤规则
+### 整体架构：两阶段过滤
 
 ```
-relevance < 50                          → 丢弃
-keywordMentioned=false && relevance < 65 → 丢弃
-isReal = false                          → 丢弃
+搜索结果 → [阶段1: 文本预匹配] → [阶段2: AI 深度分析] → 入库/丢弃
 ```
 
-## 六、热点扫描流程
+### 阶段 1：Query Expansion + 文本预匹配
+
+**目的**: 在调用 AI 之前，用低成本方式快速筛掉明显无关内容。
+
+1. **Query Expansion（AI 驱动）**：将用户关键词扩展为 5-15 个变体
+   - 含原始词各种写法（大小写、空格、连字符变体）
+   - 核心组成词拆分 + 两两组合
+   - 常见别称、缩写、中英文对照
+   - **禁止泛化**：关键词是 "Claude Sonnet 4.6" 不会生成 "AI 模型" 这类泛化词
+   - 结果带 Map 内存缓存，同一关键词只调用一次 AI
+
+2. **preMatchKeyword（纯文本匹配）**：检查内容文本是否包含任一扩展词
+   - 不区分大小写
+   - 返回 `{ matched: boolean, matchedTerms: string[] }`
+
+3. **降级策略**：无 API Key 时回退为纯文本拆分（按空格/连字符/下划线分词 + 两两组合）
+
+### 阶段 2：AI Content Analysis（DeepSeek 深度分析）
+
+**模型**: `deepseek-chat`，temperature=0.2（保证判断一致性），max_tokens=500
+
+**System Prompt 核心设计**：
 
 ```
-Cron (每30分钟) 或 POST /api/check-hotspots
-  │
-  ├─ 读取所有 isActive=true 的关键词
-  │
-  └─ 对每个关键词:
-       │
-       ├─ 1. Account Detection: 检测关键词是否为B站/微博账号
-       │
-       ├─ 2. Query Expansion: AI 扩展关键词变体
-       │
-       ├─ 3. 并行搜索 5 个源 (Promise.allSettled)
-       │    ├─ searchBing(keyword)
-       │    ├─ searchHackerNews(keyword)
-       │    ├─ searchSogou(keyword)
-       │    ├─ searchBilibili(keyword)
-       │    └─ searchWeibo(keyword)
-       │
-       ├─ 4. 后处理流水线
-       │    ├─ 账号抓取结果合并
-       │    ├─ deduplicateResults (按URL去重)
-       │    ├─ filterByFreshness (丢弃7天前)
-       │    └─ prioritizeResults (Weibo>Bilibili>HN>Sogou>Bing)
-       │
-       ├─ 5. AI 分析 (每批3条并行，限总配额25条)
-       │    ├─ preMatchKeyword (文本预匹配，快速过滤)
-       │    ├─ analyzeContent (DeepSeek 深度分析)
-       │    └─ 按 relevance/mention 规则过滤
-       │
-       └─ 6. 结果处理
-            ├─ 写入 Hotspot 表
-            ├─ 创建 Notification
-            ├─ WebSocket 推送 (hotspot:new + notification)
-            └─ 邮件通知 (importance=high/urgent)
+角色：热点内容精准匹配专家
+输入：关键词 + 内容文本 + 预匹配结果（告知 AI 哪些变体被命中）
+
+六大分析维度：
+1. 真实性（isReal）：排除标题党、假新闻、营销软文
+2. 相关性（relevance 0-100）：
+   - 同领域但未提及关键词 → <40 分
+   - 直接讨论/提及/实质关联 → ≥60 分
+   - 间接沾边（同类但不同主题） → 30-50 分
+3. 关键词提及（keywordMentioned）：是否直接出现关键词或其等价表述
+4. 重要程度（importance）：对该关键词关注者而言多重要
+   - urgent：突发/重大新闻，行业地震，安全漏洞，必须第一时间知晓
+   - high：重要发布/更新，深度分析，名人观点，有实质信息量
+   - medium：有参考价值的资讯、讨论、教程、经验分享
+   - low：仅简单提及，或价值较低（纯转发、一句话带过、SEO水文）
+5. 关联说明（summary）：一句话说清内容与关键词的关系
+6. 打分理由（relevanceReason）：一句解释相关性评分的依据
+
+输出：纯 JSON（不用 markdown 包裹），便于程序解析
 ```
+
+**预匹配结果对 Prompt 的影响**：
+- 匹配成功 → 告知 AI "文本已命中这些变体"，AI 可更自信地给高分
+- 未匹配 → 告知 AI "未命中任何变体，请特别严格审核"，AI 会更审慎
+
+### 过滤决策树
+
+```
+AI 返回 { isReal, relevance, keywordMentioned, importance, summary }
+       │
+       ├─ isReal = false ──────────→ ❌ 丢弃（虚假/标题党/营销）
+       │
+       ├─ relevance < 50 ──────────→ ❌ 丢弃（不够相关）
+       │
+       ├─ !keywordMentioned
+       │   └─ relevance < 65 ──────→ ❌ 丢弃（未提及且不够相关）
+       │
+       └─ 通过 ─────────────────────→ ✅ 入库 + 推送通知
+                                       ├─ importance=high/urgent → 邮件通知
+                                       └─ 全部 → WebSocket 实时推送
+```
+
+### 降级与容错
+
+| 场景 | 行为 |
+|---|---|
+| 未配置 API Key | relevance=50（匹配）/20（未匹配），importance=low |
+| AI 调用异常 | relevance=30（匹配）/10（未匹配），importance=low |
+| AI 返回非 JSON | 视为解析失败，走 fallback |
+| 单条分析超时 | 不影响其他条，该条走 fallback |
+| 批量分析 | 每 3 条一批并行，总配额 25 条/次扫描 |
+
+---
+
+## 六、资讯卡片评分展示体系
+
+前端每条热点卡片展示 5 个维度的 AI 分析结果：
+
+### 1. 重要程度（importance）
+
+**由 DeepSeek AI 直接判断**，Prompt 给出了明确的分级标准：
+
+| 级别 | AI 判断依据 | 标签 | 颜色 |
+|---|---|---|---|
+| `urgent` | 突发/重大新闻，行业地震级事件，官方重大公告，安全漏洞预警 — **必须第一时间知晓** | urgent | 红色 |
+| `high` | 重要产品发布/更新，深度分析/评测，知名人物观点，有实质信息量的内容 | high | 橙色 |
+| `medium` | 有一定参考价值的相关资讯、讨论、教程、经验分享 | medium | 琥珀色 |
+| `low` | 仅简单提及关键词，或价值较低（纯转发、一句话带过、SEO 水文） | low | 翠绿色 |
+
+> 高重要度（high/urgent）的热点会额外触发邮件通知。
+
+### 2. 真实性（isReal）
+
+**由 DeepSeek AI 直接判断**，识别标题党、假新闻、营销软文：
+
+| 条件 | 标签 | 颜色 | 说明 |
+|---|---|---|---|
+|---|---|---|---|
+| `isReal=true && relevance≥80` | **可信** ✅ | 翠绿 | AI 判定真实 + 高匹配度 |
+| `isReal=true && relevance<80` | 无标签 | — | 真实但匹配度一般 |
+| `isReal=false` | **可疑** ⚠️ | 红色 | 标题党/假新闻/营销软文 |
+
+### 3. 关键词提及（keywordMentioned）
+
+**由 DeepSeek AI 直接判断**，检测内容中是否出现关键词或其等价表述：
+
+| 值 | 标签 | 颜色 | 含义 |
+|---|---|---|---|
+| `true` | **直接提及** | 紫色 | 内容中直接出现关键词或其等价表述 |
+| `false` | **间接相关** | 黄色 | 同领域但未显式提及关键词 |
+
+### 4. 匹配度（relevance）
+
+**由 DeepSeek AI 直接打分**（0-100），综合内容语义、关键词关联度、信息质量得出：
+
+- 该分数由 DeepSeek 综合内容语义、关键词关联度、信息质量得出
+- 低于 50 分的内容已在后端过滤，前端不会展示
+
+### 5. 热度指数（heat score）
+
+**前端计算**，综合多平台互动数据归一化到 0-100：
+
+```
+原始分 = 点赞×2 + 转发×3 + 回复×1.5 + 评论×1.5 + 引用×2 + 浏览÷100
+热度指数 = min(100, round(log10(原始分 + 1) × 25))
+```
+
+**权重设计**：转发 > 引用 ≈ 点赞 > 评论 ≈ 回复 > 浏览
+
+| 分数区间 | 等级 | 颜色 |
+|---|---|---|
+| ≥80 | **爆** 🔥 | 红色 |
+| 60-79 | **热** | 橙色 |
+| 40-59 | **温** | 琥珀色 |
+| 20-39 | **凉** | 蓝色 |
+| <20 | **冷** | 灰色 |
+
+> 对数压缩确保少量高互动内容不会完全淹没其他结果。
+
+---
 
 ## 七、前端 UI 设计
 
