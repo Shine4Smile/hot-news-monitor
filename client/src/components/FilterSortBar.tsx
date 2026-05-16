@@ -34,11 +34,11 @@ interface FilterSortBarProps {
 }
 
 const SORT_OPTIONS = [
-  { value: 'createdAt', label: '最新发现', icon: Clock },
-  { value: 'publishedAt', label: '最新发布', icon: Clock },
+  { value: 'createdAt', label: '最近捕获', icon: Clock },
+  { value: 'publishedAt', label: '最近发布', icon: Clock },
   { value: 'importance', label: '重要程度', icon: Flame },
-  { value: 'relevance', label: '相关性', icon: Target },
-  { value: 'hot', label: '热度综合', icon: TrendingUp },
+  { value: 'relevance', label: '匹配度', icon: Target },
+  { value: 'hot', label: '热度指数', icon: TrendingUp },
 ];
 
 const SOURCE_OPTIONS = [
