@@ -1,27 +1,44 @@
 {
-  "name": "hot-news-monitor-server",
+  "name": "yupi-hot-monitor-server",
   "version": "1.0.0",
   "type": "module",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:push": "prisma db push",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
-    "cheerio": "^1.2.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^5.1.0",
-    "node-cron": "^3.0.3",
-    "openai": "^4.87.3"
+    "@prisma/client": "^6.19.2",
+    "axios": "^1.13.4",
+    "cheerio": "^1.1.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.0",
+    "prisma": "^6.19.2",
+    "socket.io": "^4.8.3",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.13.0",
-    "@types/node-cron": "^3.0.11",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.0",
+    "@types/nodemailer": "^7.0.9",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

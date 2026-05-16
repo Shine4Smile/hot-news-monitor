@@ -1,19 +1,17 @@
-# 热点监控系统 — 技术设计文档
+# HotPulse — 技术设计文档
 
 ## 一、技术栈
 
 | 层 | 技术 | 版本 | 说明 |
 |---|---|---|---|
-| 前端 | React + TypeScript + Vite | React 19, Vite 7 | 快速开发、HMR |
-| 样式 | 纯 CSS（自建工具类） | — | 无框架依赖，赛博脉冲主题 |
+| 前端 | React + TypeScript + Vite | React 19, Vite 7 | SPA, HMR |
+| 样式 | Tailwind CSS v4 + Aceternity UI | latest | 原子化 CSS + 高级动画组件 |
 | 后端 | Node.js + Express | 5.x | 轻量 API 服务 |
-| 数据库 | SQLite (better-sqlite3) | 11.x | 零配置、同步 API |
-| AI | DeepSeek API (OpenAI SDK) | latest | 兼容 OpenAI 格式 |
-| 定时任务 | node-cron | 3.x | Cron 表达式调度 |
-| 实时推送 | SSE (Server-Sent Events) | 原生 | 单向推送、简单可靠 |
+| 数据库 | Prisma ORM + SQLite | Prisma 6.x | 类型安全 ORM |
+| AI | DeepSeek API (原生 fetch) | — | OpenAI 兼容格式 |
+| 定时任务 | node-cron | 4.x | Cron 表达式调度 |
+| 实时推送 | Socket.IO (WebSocket) | 4.x | 双向实时通信 |
 | 运行时 | tsx | latest | TypeScript 直接运行 |
-
-| 爬虫 | cheerio + Node.js fetch | 1.x | HTML 解析，无头浏览器 |
 
 ## 二、架构图
 
@@ -21,107 +19,130 @@
 ┌─────────────────────────────────────────────────┐
 │              浏览器 (React SPA)                   │
 │  ┌────────┬────────┬────────┬──────────────┐    │
-│  │ 关键词  │ 热点   │ 通知   │ 统计面板     │    │
-│  │ 管理   │ 看板   │ 中心   │ (AI验证状态)  │    │
+│  │ 热点雷达 │ 监控词  │ 搜索   │ 通知中心     │    │
+│  │ 看板   │ 管理   │ 扩展   │              │    │
 │  └────────┴────────┴────────┴──────────────┘    │
-│         │  SSE (实时推送)  │  REST API          │
-└─────────┼──────────────────┼───────────────────┘
-          │                  │
-┌─────────┴──────────────────┴───────────────────┐
+│         │  WebSocket (Socket.IO)  │  REST API   │
+└─────────┼─────────────────────────┼─────────────┘
+          │                         │
+┌─────────┴─────────────────────────┴─────────────┐
 │            Express 5 后端服务                     │
-│  ┌──────────┬──────────┬──────────────────┐     │
-│  │ REST API │ SSE Hub  │ Cron Scheduler   │     │
-│  │ Routes   │ (推送)    │ (定时采集/验证)   │     │
-│  └──────────┴──────────┴──────────────────┘     │
+│  ┌──────────┬──────────────┬────────────────┐   │
+│  │ REST API │ Socket.IO    │ Cron Scheduler │   │
+│  │ Routes   │ (实时推送)    │ (每30分钟扫描)  │   │
+│  └──────────┴──────────────┴────────────────┘   │
 │  ┌──────────────────────────────────────────┐   │
 │  │          Service Layer                    │   │
 │  │  ┌──────────┬──────────┬──────────┐      │   │
-│  │  │ Registry  │ Verifier │ Relevance│      │   │
-│  │  │ (源管理)  │(DeepSeek)│(降级算法) │      │   │
+│  │  │ ai.ts    │ search   │ email    │      │   │
+│  │  │(DeepSeek)│ .ts      │ .ts      │      │   │
+│  │  │          │(Bing+HN) │(邮件通知) │      │   │
+│  │  ├──────────┼──────────┼──────────┤      │   │
+│  │  │ china    │ twitter  │          │      │   │
+│  │  │ Search.ts│ .ts      │          │      │   │
+│  │  │(搜狗+B站 │(已停用)  │          │      │   │
+│  │  │ +微博)   │          │          │      │   │
 │  │  └──────────┴──────────┴──────────┘      │   │
 │  └──────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────┐   │
-│  │   Sources (插件化数据源)                   │   │
-│  │   IT之家 · 百度热搜 · 微博热搜 ·           │   │
-│  │   GitHub Trending · 阮一峰 · Solidot      │   │
-│  └──────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────┐   │
-│  │      better-sqlite3 (SQLite)              │   │
+│  │      Prisma ORM + SQLite                  │   │
 │  └──────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────┘
           │                               │
           ▼                               ▼
   ┌──────────────┐              ┌───────────────────┐
-  │  DeepSeek API │              │  6 个数据源 (HTTP)  │
-  │ (验证 + 摘要) │              │  实时爬取，无需 Key  │
+  │ DeepSeek API  │              │  5 个搜索源 (HTTP) │
+  │ (Query Exp.   │              │  Bing · 搜狗 · B站 │
+  │  + 内容分析)  │              │  微博 · HN         │
   └──────────────┘              └───────────────────┘
 ```
 
-### 二-B、数据源详情
+### 数据源详情
 
-| # | 数据源 | 类型 | 方式 | 频率 | 状态 |
-|---|---|---|---|---|---|
-| 1 | **IT之家** | 科技资讯 | cheerio HTML 解析 | 3 min | ✅ |
-| 2 | **百度热搜** | 综合热点 | cheerio + JSON | 5 min | ✅ |
-| 3 | **微博热搜** | 社会热点 | JSON API | 5 min | ✅ |
-| 4 | **GitHub Trending** | 开源热点 | cheerio HTML | 30 min | ✅ |
-| 5 | **阮一峰博客** | 科技博客 | cheerio HTML | 60 min | ✅ |
-| 6 | **Solidot** | 科技新闻 | RSS 2.0 | 10 min | ✅ |
+| # | 数据源 | 类型 | 实现 | 状态 |
+|---|---|---|---|---|
+| 1 | **Bing** | 搜索引擎 | `services/search.ts` — cheerio HTML 解析 | ✅ |
+| 2 | **搜狗** | 搜索引擎 | `services/chinaSearch.ts` — cheerio HTML 解析 | ✅ |
+| 3 | **Bilibili** | 视频平台 | `services/chinaSearch.ts` — 网页搜索 API | ✅ |
+| 4 | **微博** | 社交平台 | `services/chinaSearch.ts` — 热搜 API | ✅ |
+| 5 | **Hacker News** | 技术社区 | `services/search.ts` — Algolia API | ✅ |
+| 6 | **Twitter (X)** | 社交平台 | `services/twitter.ts` — twitterapi.io | ⏸️ 已停用 |
 
-- 所有源**无需 API Key**，纯 HTTP 请求
-- 各源差异化频率，尊重目标服务器
-- 源间请求间隔 ≥ 3s，单源超时 10s
-- 新增源只需实现 `Source` 接口并注册
+- Twitter 通过 twitterapi.io 付费 API 接入，需要 `TWITTER_API_KEY`
+- 其他源均为免费公开接口，无需 API Key
+- 搜索时各源并行请求，`Promise.allSettled` 保证单源失败不影响其他
+
+## 三、数据库设计 (Prisma Schema)
+
+```prisma
+model Keyword {
+  id        String    @id @default(uuid())
+  text      String    @unique
+  category  String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  hotspots  Hotspot[]
+}
+
+model Hotspot {
+  id              String    @id @default(uuid())
+  title           String
+  content         String
+  url             String
+  source          String    // bing, sogou, bilibili, weibo, hackernews, twitter
+  sourceId        String?   // 源平台ID
+  isReal          Boolean   @default(true)
+  relevance       Int       @default(0)       // AI 相关性评分 0-100
+  relevanceReason String?                      // AI 分析理由
+  keywordMentioned Boolean?                    // 是否直接提及关键词
+  importance      String    @default("low")    // low/medium/high/urgent
+  summary         String?                      // AI 生成摘要
+  // 多平台互动指标
+  viewCount       Int?
+  likeCount       Int?
+  retweetCount    Int?
+  replyCount      Int?
+  commentCount    Int?
+  quoteCount      Int?
+  danmakuCount    Int?      // B站弹幕数
+  // 作者信息
+  authorName      String?
+  authorUsername  String?
+  authorAvatar    String?
+  authorFollowers Int?
+  authorVerified  Boolean?
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  keywordId       String?
+  keyword         Keyword?  @relation(fields: [keywordId], references: [id])
+
+  @@unique([url, source])  // 同一来源同一URL不重复
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // hotspot, alert
+  title     String
+  content   String
+  isRead    Boolean  @default(false)
+  hotspotId String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
 ```
 
-## 三、数据库设计
+### 关键设计决策
 
-### keywords 表
-
-```sql
-CREATE TABLE keywords (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  keyword TEXT NOT NULL,
-  category TEXT DEFAULT '通用',
-  active INTEGER DEFAULT 1,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-```
-
-### hotspots 表
-
-```sql
-CREATE TABLE hotspots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  summary TEXT,
-  source TEXT,
-  source_url TEXT,
-  keyword_match TEXT,
-  ai_verified INTEGER DEFAULT 0,
-  ai_score REAL DEFAULT 0,
-  ai_summary TEXT,
-  is_fake INTEGER DEFAULT 0,
-  published_at TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-```
-
-### notifications 表
-
-```sql
-CREATE TABLE notifications (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL DEFAULT 'hotspot',
-  title TEXT NOT NULL,
-  message TEXT,
-  hotspot_id INTEGER,
-  is_read INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (hotspot_id) REFERENCES hotspots(id)
-);
-```
+- **UUID 主键**: 支持分布式扩展
+- **@@unique([url, source])**: 防止同一页面被重复入库
+- **keywordMentioned**: 区分"内容涉及该领域"和"内容直接提到关键词"
+- **多平台指标**: 统一字段名，不同平台对应不同字段（如 Twitter 用 retweetCount，B站用 danmakuCount）
 
 ## 四、API 设计
 
@@ -131,17 +152,15 @@ CREATE TABLE notifications (
 |---|---|---|
 | GET | `/api/keywords` | 获取关键词列表 |
 | POST | `/api/keywords` | 添加关键词 |
-| PUT | `/api/keywords/:id` | 更新关键词 |
+| PUT | `/api/keywords/:id` | 更新关键词（启用/停用） |
 | DELETE | `/api/keywords/:id` | 删除关键词 |
-| POST | `/api/keywords/:id/scan` | 手动触发扫描 |
 
 ### 热点管理
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/hotspots` | 获取热点列表（支持 ?category=&verified=&page=&limit=） |
+| GET | `/api/hotspots` | 获取热点列表（支持排序、筛选、分页） |
 | GET | `/api/hotspots/:id` | 获取热点详情 |
-| POST | `/api/hotspots/discover` | 手动触发热点发现 |
 | DELETE | `/api/hotspots/:id` | 删除热点 |
 
 ### 通知管理
@@ -150,139 +169,204 @@ CREATE TABLE notifications (
 |---|---|---|
 | GET | `/api/notifications` | 获取通知列表 |
 | PUT | `/api/notifications/:id/read` | 标记已读 |
-| PUT | `/api/notifications/read-all` | 全部标记已读 |
+| PUT | `/api/notifications/read-all` | 全部已读 |
 | GET | `/api/notifications/unread-count` | 未读数 |
 
-### 实时推送
+### 设置管理
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/stream` | SSE 连接，推送新热点和通知 |
+| GET | `/api/settings` | 获取所有设置 |
+| PUT | `/api/settings` | 更新设置 |
 
-### 统计
+### 手动触发
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/stats` | 获取统计数据概览 |
+| POST | `/api/check-hotspots` | 手动触发全量热点扫描 |
+
+### 实时推送 (WebSocket 事件)
+
+| 事件 | 方向 | 说明 |
+|---|---|---|
+| `subscribe` | Client→Server | 订阅关键词频道 |
+| `unsubscribe` | Client→Server | 取消订阅 |
+| `hotspot:new` | Server→Client | 新热点发现 |
+| `notification` | Server→Client | 新通知 |
 
 ## 五、DeepSeek AI 对接
 
+使用原生 `fetch` 直接调用（零依赖）：
+
 ```typescript
-// 使用 OpenAI SDK 对接 DeepSeek
-import OpenAI from 'openai';
+// server/src/services/ai.ts
+const DEEPSEEK_BASE = 'https://api.deepseek.com/v1/chat/completions';
+const DEEPSEEK_MODEL = 'deepseek-chat';
 
-const client = new OpenAI({
-  baseURL: 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
-
-// 验证热点内容是否与关键词相关
-async function verifyHotspot(title: string, content: string, keyword: string) {
-  const response = await client.chat.completions.create({
-    model: 'deepseek-chat',
-    messages: [
-      { role: 'system', content: `你是一个内容审核助手...` },
-      { role: 'user', content: `验证以下内容是否与"${keyword}"相关...` }
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.1,
+async function callDeepSeek(messages, options) {
+  const res = await fetch(DEEPSEEK_BASE, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages,
+      temperature: options.temperature ?? 0.2,
+      max_tokens: options.maxTokens ?? 500
+    })
   });
-  return JSON.parse(response.choices[0].message.content);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 ```
 
-## 六、定时任务设计
+### 功能 1：Query Expansion（查询扩展）
 
-```typescript
-import cron from 'node-cron';
+输入关键词 → AI 生成 5-15 个变体 → 用于文本预匹配
 
-// 每 5 分钟采集一次热点
-cron.schedule('*/5 * * * *', async () => {
-  await collectHotspots();
-});
+- 含原始词的各种写法、核心拆分、常见别称、中英文对照
+- 结果带 Map 缓存，同一关键词全局只调用一次 AI
+- 无 API Key 时回退为纯文本拆分
 
-// 每 10 分钟验证一次未验证的热点
-cron.schedule('*/10 * * * *', async () => {
-  await verifyPendingHotspots();
-});
+### 功能 2：Content Analysis（内容分析）
+
+输入内容 + 关键词 + 预匹配结果 → AI 返回结构化 JSON：
+
+```json
+{
+  "isReal": true,           // 是否真实信息（非标题党/假新闻/营销软文）
+  "relevance": 85,          // 相关性 0-100
+  "relevanceReason": "...", // 打分理由
+  "keywordMentioned": true, // 是否直接提及关键词
+  "importance": "high",     // low/medium/high/urgent
+  "summary": "此内容与【关键词】的关联：..." // 关联说明
+}
 ```
 
-## 七、前端 UI 设计理念
+### 过滤规则
 
-风格：**Cyberspace Pulse（赛博脉冲）**
+```
+relevance < 50                          → 丢弃
+keywordMentioned=false && relevance < 65 → 丢弃
+isReal = false                          → 丢弃
+```
 
-- 深色主题为主，霓虹色点缀
-- 脉冲动画表示实时监控状态
-- 卡片悬浮效果 + 玻璃态面板
-- 独特的网格背景 + 粒子效果
-- 热力波纹表示热点热度
+## 六、热点扫描流程
 
-主要页面/模块：
-1. **监控面板** — 实时状态、关键词列表、快速添加
-2. **热点看板** — 卡片流展示、AI 验证标记、热度排序
-3. **通知中心** — 时间线展示、未读高亮
-4. **统计视图** — 简单数据图表
+```
+Cron (每30分钟) 或 POST /api/check-hotspots
+  │
+  ├─ 读取所有 isActive=true 的关键词
+  │
+  └─ 对每个关键词:
+       │
+       ├─ 1. Account Detection: 检测关键词是否为B站/微博账号
+       │
+       ├─ 2. Query Expansion: AI 扩展关键词变体
+       │
+       ├─ 3. 并行搜索 5 个源 (Promise.allSettled)
+       │    ├─ searchBing(keyword)
+       │    ├─ searchHackerNews(keyword)
+       │    ├─ searchSogou(keyword)
+       │    ├─ searchBilibili(keyword)
+       │    └─ searchWeibo(keyword)
+       │
+       ├─ 4. 后处理流水线
+       │    ├─ 账号抓取结果合并
+       │    ├─ deduplicateResults (按URL去重)
+       │    ├─ filterByFreshness (丢弃7天前)
+       │    └─ prioritizeResults (Weibo>Bilibili>HN>Sogou>Bing)
+       │
+       ├─ 5. AI 分析 (每批3条并行，限总配额25条)
+       │    ├─ preMatchKeyword (文本预匹配，快速过滤)
+       │    ├─ analyzeContent (DeepSeek 深度分析)
+       │    └─ 按 relevance/mention 规则过滤
+       │
+       └─ 6. 结果处理
+            ├─ 写入 Hotspot 表
+            ├─ 创建 Notification
+            ├─ WebSocket 推送 (hotspot:new + notification)
+            └─ 邮件通知 (importance=high/urgent)
+```
+
+## 七、前端 UI 设计
+
+**风格**: 深色赛博主题 + Tailwind CSS + Aceternity UI 动画组件
+
+核心组件：
+| 组件 | 效果 |
+|---|---|
+| `background-beams` | 动态光束背景动画 |
+| `meteors` | 流星飞过效果 |
+| `moving-border` | 流动边框高亮 |
+| `spotlight` | 鼠标聚光灯跟随 |
+| `text-generate-effect` | 文字逐字生成 |
+
+功能模块：
+1. **热点雷达** — 实时热点流、统计面板、排序筛选
+2. **监控词管理** — 添加/编辑/启用停用关键词
+3. **搜索扩展** — 手动搜索 + AI 分析预览
+4. **通知中心** — 未读高亮、时间线展示
 
 ## 八、项目结构
 
 ```
 hot-news-monitor/
+├── README.md
 ├── docs/
 │   ├── REQUIREMENTS.md
-│   └── DESIGN.md
+│   ├── DESIGN.md
+│   └── DEVELOPMENT.md
 ├── server/
 │   ├── package.json
 │   ├── tsconfig.json
-│   ├── src/
-│   │   ├── index.ts          # 入口
-│   │   ├── db.ts             # 数据库初始化
-│   │   ├── routes/
-│   │   │   ├── keywords.ts
-│   │   │   ├── hotspots.ts
-│   │   │   ├── notifications.ts
-│   │   │   ├── stream.ts
-│   │   │   └── stats.ts
-│   │   ├── services/
-│   │   │   ├── collector.ts   # 多源采集
-│   │   │   ├── verifier.ts    # AI 验证
-│   │   │   └── scheduler.ts   # 定时任务
-│   │   └── lib/
-│   │       ├── deepseek.ts    # DeepSeek 客户端
-│   │       └── sse.ts         # SSE 管理
-│   └── data/                  # SQLite 数据文件
-├── client/
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── index.html
-│   ├── src/
-│   │   ├── main.tsx
-│   │   ├── App.tsx
-│   │   ├── index.css
-│   │   ├── components/
-│   │   │   ├── Layout.tsx
-│   │   │   ├── KeywordManager.tsx
-│   │   │   ├── HotspotBoard.tsx
-│   │   │   ├── NotificationCenter.tsx
-│   │   │   ├── StatsPanel.tsx
-│   │   │   └── PulseBackground.tsx
-│   │   ├── hooks/
-│   │   │   ├── useSSE.ts
-│   │   │   └── useApi.ts
-│   │   └── types/
-│   │       └── index.ts
-│   └── public/
-└── skills/                    # Agent Skills (Phase 5)
-    └── hot-news-monitor/
-        └── SKILL.md
+│   ├── prisma.config.ts
+│   ├── .env.example
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   └── migrations/
+│   └── src/
+│       ├── index.ts              # 入口: Express + Socket.IO + Cron
+│       ├── db.ts                 # Prisma Client 单例
+│       ├── types.ts              # 共享类型定义
+│       ├── routes/
+│       │   ├── keywords.ts
+│       │   ├── hotspots.ts
+│       │   ├── notifications.ts
+│       │   └── settings.ts
+│       ├── services/
+│       │   ├── ai.ts             # DeepSeek API (fetch)
+│       │   ├── search.ts         # Bing + HackerNews
+│       │   ├── chinaSearch.ts    # 搜狗 + B站 + 微博
+│       │   ├── twitter.ts        # Twitter (已停用)
+│       │   └── email.ts          # 邮件通知
+│       ├── jobs/
+│       │   └── hotspotChecker.ts # 热点扫描主流程
+│       └── utils/
+│           └── sortHotspots.ts
+└── client/
+    ├── package.json
+    ├── vite.config.ts
+    ├── index.html
+    └── src/
+        ├── main.tsx
+        ├── App.tsx
+        ├── index.css             # Tailwind CSS
+        ├── components/
+        │   ├── FilterSortBar.tsx
+        │   └── ui/               # Aceternity UI 组件
+        │       ├── background-beams.tsx
+        │       ├── meteors.tsx
+        │       ├── moving-border.tsx
+        │       ├── spotlight.tsx
+        │       └── text-generate-effect.tsx
+        ├── services/
+        │   ├── api.ts            # REST API 封装
+        │   └── socket.ts         # Socket.IO 客户端
+        └── utils/
+            ├── relativeTime.ts
+            └── sortHotspots.ts
 ```
 
-## 九、开发顺序
-
-| Phase | 内容 | 预计 |
-|---|---|---|
-| Phase 1 | 后端骨架 + 数据库 + DeepSeek 客户端 | 先做 |
-| Phase 2 | 前端 Web 独特 UI | 后做 |
-| Phase 3 | 定时采集 + AI 验证 + SSE 通知 | 串联 |
-| Phase 4 | 联调测试 + Bug 修复 | 验收 |
-| Phase 5 | Agent Skills 封装 | 收尾 |

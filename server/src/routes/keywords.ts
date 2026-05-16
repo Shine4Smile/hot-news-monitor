@@ -1,66 +1,138 @@
 import { Router } from 'express';
-import db from '../db.js';
+import { prisma } from '../db.js';
 
 const router = Router();
 
-// List all keywords
-router.get('/', (_req, res) => {
-  const keywords = db.prepare('SELECT * FROM keywords ORDER BY created_at DESC').all();
-  res.json(keywords);
-});
-
-// Add a keyword
-router.post('/', (req, res) => {
-  const { keyword, category } = req.body;
-  if (!keyword || !keyword.trim()) {
-    res.status(400).json({ error: 'keyword is required' });
-    return;
-  }
-
+// 获取所有关键词
+router.get('/', async (req, res) => {
   try {
-    const result = db.prepare(
-      'INSERT INTO keywords (keyword, category) VALUES (?, ?)'
-    ).run(keyword.trim(), category || '通用');
-    const created = db.prepare('SELECT * FROM keywords WHERE id = ?').get(result.lastInsertRowid);
-    res.status(201).json(created);
-  } catch (err: any) {
-    if (err.message?.includes('UNIQUE')) {
-      res.status(409).json({ error: '关键词已存在' });
-    } else {
-      res.status(500).json({ error: err.message });
+    const keywords = await prisma.keyword.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { hotspots: true }
+        }
+      }
+    });
+    res.json(keywords);
+  } catch (error) {
+    console.error('Error fetching keywords:', error);
+    res.status(500).json({ error: 'Failed to fetch keywords' });
+  }
+});
+
+// 获取单个关键词
+router.get('/:id', async (req, res) => {
+  try {
+    const keyword = await prisma.keyword.findUnique({
+      where: { id: req.params.id },
+      include: {
+        hotspots: {
+          orderBy: { createdAt: 'desc' },
+          take: 20
+        }
+      }
+    });
+
+    if (!keyword) {
+      return res.status(404).json({ error: 'Keyword not found' });
     }
+
+    res.json(keyword);
+  } catch (error) {
+    console.error('Error fetching keyword:', error);
+    res.status(500).json({ error: 'Failed to fetch keyword' });
   }
 });
 
-// Update a keyword
-router.put('/:id', (req, res) => {
-  const { id } = req.params;
-  const { keyword, category, active } = req.body;
+// 创建关键词
+router.post('/', async (req, res) => {
+  try {
+    const { text, category } = req.body;
 
-  const existing = db.prepare('SELECT * FROM keywords WHERE id = ?').get(id);
-  if (!existing) {
-    res.status(404).json({ error: '关键词不存在' });
-    return;
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Keyword text is required' });
+    }
+
+    const keyword = await prisma.keyword.create({
+      data: {
+        text: text.trim(),
+        category: category?.trim() || null
+      }
+    });
+
+    res.status(201).json(keyword);
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Keyword already exists' });
+    }
+    console.error('Error creating keyword:', error);
+    res.status(500).json({ error: 'Failed to create keyword' });
   }
-
-  db.prepare(`
-    UPDATE keywords
-    SET keyword = COALESCE(?, keyword),
-        category = COALESCE(?, category),
-        active = COALESCE(?, active),
-        updated_at = datetime('now')
-    WHERE id = ?
-  `).run(keyword?.trim() || null, category || null, active ?? null, id);
-
-  const updated = db.prepare('SELECT * FROM keywords WHERE id = ?').get(id);
-  res.json(updated);
 });
 
-// Delete a keyword
-router.delete('/:id', (req, res) => {
-  const { id } = req.params;
-  db.prepare('DELETE FROM keywords WHERE id = ?').run(id);
-  res.json({ success: true });
+// 更新关键词
+router.put('/:id', async (req, res) => {
+  try {
+    const { text, category, isActive } = req.body;
+
+    const keyword = await prisma.keyword.update({
+      where: { id: req.params.id },
+      data: {
+        ...(text && { text: text.trim() }),
+        ...(category !== undefined && { category: category?.trim() || null }),
+        ...(isActive !== undefined && { isActive })
+      }
+    });
+
+    res.json(keyword);
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+    console.error('Error updating keyword:', error);
+    res.status(500).json({ error: 'Failed to update keyword' });
+  }
+});
+
+// 删除关键词
+router.delete('/:id', async (req, res) => {
+  try {
+    await prisma.keyword.delete({
+      where: { id: req.params.id }
+    });
+
+    res.status(204).send();
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+    console.error('Error deleting keyword:', error);
+    res.status(500).json({ error: 'Failed to delete keyword' });
+  }
+});
+
+// 切换关键词状态
+router.patch('/:id/toggle', async (req, res) => {
+  try {
+    const keyword = await prisma.keyword.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!keyword) {
+      return res.status(404).json({ error: 'Keyword not found' });
+    }
+
+    const updated = await prisma.keyword.update({
+      where: { id: req.params.id },
+      data: { isActive: !keyword.isActive }
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Error toggling keyword:', error);
+    res.status(500).json({ error: 'Failed to toggle keyword' });
+  }
 });
 
 export default router;

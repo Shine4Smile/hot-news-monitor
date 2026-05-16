@@ -13,7 +13,7 @@
 | 🎯 **关键词监控** | 手动输入关键词，系统自动从多源采集匹配内容 |
 | 🤖 **AI 验真** | 利用 DeepSeek 识别假冒/标题党/无关内容 |
 | 🔍 **热点发现** | 自动搜集指定领域（如"AI编程"）的热门话题 |
-| 📡 **实时推送** | SSE 实时推送 + 浏览器通知 + 通知中心 |
+| 📡 **实时推送** | WebSocket 实时推送 + 浏览器通知 + 通知中心 |
 | 🌐 **多源采集** | 从多个信息源获取，避免单一来源偏差 |
 | 📱 **响应式设计** | 桌面 + 移动端完美适配，赛博脉冲风格 |
 
@@ -57,12 +57,15 @@ cd server && npm install
 cd ../client && npm install
 ```
 
-### 2. 配置环境变量
+### 2. 配置环境变量 & 初始化数据库
 
 ```bash
 cd server
 cp .env.example .env
-# 编辑 .env，填入 DeepSeek API Key
+# 编辑 .env，填入 DEEPSEEK_API_KEY
+
+# 初始化数据库（SQLite + Prisma）
+npx prisma db push
 ```
 
 > 获取 API Key: https://platform.deepseek.com/api_keys
@@ -72,7 +75,7 @@ cp .env.example .env
 ### 3. 启动服务
 
 ```bash
-# 终端 1: 启动后端 (端口 3000)
+# 终端 1: 启动后端 (端口 3001)
 cd server && npm run dev
 
 # 终端 2: 启动前端 (端口 5173)
@@ -93,41 +96,56 @@ hot-news-monitor/
 │   ├── REQUIREMENTS.md      # 需求文档
 │   ├── DESIGN.md            # 设计文档
 │   └── DEVELOPMENT.md       # 开发指南
-├── server/                  # 后端
+├── server/                  # 后端 (Express 5 + TypeScript)
 │   ├── package.json
 │   ├── tsconfig.json
+│   ├── prisma.config.ts
 │   ├── .env.example         # 环境变量模板
-│   ├── .gitignore
+│   ├── prisma/
+│   │   ├── schema.prisma    # 数据库模型定义
+│   │   └── migrations/      # 数据库迁移
 │   └── src/
-│       ├── index.ts         # 服务入口
-│       ├── db.ts            # 数据库初始化
+│       ├── index.ts         # 服务入口 + WebSocket
+│       ├── db.ts            # Prisma Client
+│       ├── types.ts         # TypeScript 类型
 │       ├── routes/          # API 路由
 │       │   ├── keywords.ts
 │       │   ├── hotspots.ts
 │       │   ├── notifications.ts
-│       │   ├── stream.ts    # SSE 推送
-│       │   └── stats.ts
-│       ├── services/
-│       │   ├── collector.ts # 多源采集
-│       │   ├── verifier.ts  # AI 验证
-│       │   └── scheduler.ts # 定时任务
-│       └── lib/
-│           ├── deepseek.ts  # DeepSeek 客户端
-│           └── sse.ts       # SSE Hub
-└── client/                  # 前端
+│       │   └── settings.ts
+│       ├── services/        # 业务服务
+│       │   ├── ai.ts        # DeepSeek AI 集成
+│       │   ├── search.ts    # Bing + HackerNews 搜索
+│       │   ├── chinaSearch.ts # 搜狗 + B站 + 微博搜索
+│       │   ├── twitter.ts   # Twitter 搜索（已停用）
+│       │   └── email.ts     # 邮件通知
+│       ├── jobs/
+│       │   └── hotspotChecker.ts  # 热点检查主流程
+│       └── utils/
+│           └── sortHotspots.ts
+└── client/                  # 前端 (React 19 + Vite 7)
     ├── package.json
     ├── vite.config.ts
-    ├── .gitignore
+    ├── index.html
     └── src/
         ├── main.tsx
         ├── App.tsx
-        ├── index.css        # 纯 CSS 样式系统
+        ├── index.css        # Tailwind CSS
         ├── components/
-        │   ├── ParticleBackground.tsx
-        │   ├── KeywordManager.tsx
-        │   ├── HotspotBoard.tsx
-        │   └── NotificationCenter.tsx
-        ├── hooks/
+        │   ├── FilterSortBar.tsx
+        │   └── ui/          # UI 动画组件
+        │       ├── background-beams.tsx
+        │       ├── meteors.tsx
+        │       ├── moving-border.tsx
+        │       ├── spotlight.tsx
+        │       └── text-generate-effect.tsx
+        ├── services/
+        │   ├── api.ts       # REST API 封装
+        │   └── socket.ts    # WebSocket 客户端
+        └── utils/
+            ├── relativeTime.ts
+            └── sortHotspots.ts
+```
         │   ├── useApi.ts
         │   └── useSSE.ts
         └── types/
