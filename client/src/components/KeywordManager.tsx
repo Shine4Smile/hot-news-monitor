@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../hooks/useApi';
 import type { Keyword } from '../types';
 
-export default function KeywordManager() {
+export default function KeywordManager({ onTriggerSearch }: { onTriggerSearch?: () => void }) {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [newKw, setNewKw] = useState('');
   const [newCat, setNewCat] = useState('通用');
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   const loadKeywords = useCallback(async () => {
     try {
@@ -32,9 +33,25 @@ export default function KeywordManager() {
     setLoading(false);
   };
 
+  const handleToggle = async (id: number, active: boolean) => {
+    await api.toggleKeyword(id, !active);
+    loadKeywords();
+  };
+
   const handleDelete = async (id: number) => {
     await api.deleteKeyword(id);
     loadKeywords();
+  };
+
+  const handleTriggerSearch = async () => {
+    setSearching(true);
+    try {
+      await api.triggerCollect();
+      onTriggerSearch?.();
+    } catch (err: any) {
+      alert(err.message);
+    }
+    setSearching(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -77,6 +94,14 @@ export default function KeywordManager() {
             {loading ? '...' : '追踪'}
           </button>
         </div>
+        {/* Trigger search button */}
+        <button
+          onClick={handleTriggerSearch}
+          disabled={searching}
+          className="mt-3 w-full px-4 py-2 border border-cyber-neon/40 text-cyber-neon rounded-lg text-sm font-medium hover:bg-cyber-neon/10 disabled:opacity-40 transition-all cursor-pointer"
+        >
+          {searching ? '⏳ 检索中...' : '🔍 立即检索一次'}
+        </button>
       </div>
 
       {/* Keywords list */}
@@ -89,14 +114,26 @@ export default function KeywordManager() {
         {keywords.map((kw) => (
           <div
             key={kw.id}
-            className="glass-card rounded-lg px-4 py-3 flex items-center justify-between group hover:border-cyber-pulse/40 transition-all"
+            className={`glass-card rounded-lg px-4 py-3 flex items-center justify-between group hover:border-cyber-pulse/40 transition-all ${!kw.active ? 'opacity-50' : ''}`}
           >
             <div className="flex items-center gap-3">
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${kw.active ? 'bg-cyber-ok' : 'bg-cyber-muted'}`} />
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${kw.active ? 'bg-cyber-ok' : 'bg-cyber-muted'}`} />
+              {/* Toggle switch */}
+              <button
+                onClick={() => handleToggle(kw.id, !!kw.active)}
+                className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${
+                  kw.active ? 'bg-cyber-ok' : 'bg-cyber-muted'
+                }`}
+                title={kw.active ? '点击停用' : '点击启用'}
+              >
+                <span
+                  className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    kw.active ? 'left-4' : 'left-0.5'
+                  }`}
+                />
+              </button>
+              <span className={`text-sm ${kw.active ? 'font-medium' : 'line-through text-cyber-muted'}`}>
+                {kw.keyword}
               </span>
-              <span className="text-sm font-medium">{kw.keyword}</span>
               <span className="text-xs text-cyber-muted bg-cyber-surface px-2 py-0.5 rounded">
                 {kw.category}
               </span>

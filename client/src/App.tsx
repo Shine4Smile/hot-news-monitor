@@ -13,6 +13,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('hotspots');
   const [stats, setStats] = useState<Stats | null>(null);
   const [notifKey, setNotifKey] = useState(0);
+  const [hotspotKey, setHotspotKey] = useState(0);
 
   const loadStats = useCallback(async () => {
     try { const s = await api.getStats(); setStats(s); } catch {}
@@ -81,8 +82,10 @@ export default function App() {
           ))}
         </nav>
         <main className="min-h-[400px]">
-          {tab === 'keywords' && <KeywordManager />}
-          {tab === 'hotspots' && <HotspotBoard />}
+          {tab === 'keywords' && (
+            <KeywordManager onTriggerSearch={() => { loadStats(); setHotspotKey(k => k + 1); }} />
+          )}
+          {tab === 'hotspots' && <HotspotBoard key={hotspotKey} />}
           {tab === 'notifications' && <NotificationCenter key={notifKey} />}
         </main>
         <footer className="mt-12 pt-6 border-t border-cyber-border/30 text-center text-[10px] text-cyber-muted">

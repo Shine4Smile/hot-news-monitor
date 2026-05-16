@@ -1,5 +1,6 @@
 import db from '../db.js';
 import { verifyContent } from '../lib/deepseek.js';
+import { calculateRelevance } from '../lib/relevance.js';
 import { sseHub } from '../lib/sse.js';
 
 /**
@@ -22,7 +23,16 @@ export async function verifyPendingHotspots(): Promise<number> {
   for (const hotspot of unverified) {
     try {
       const keyword = hotspot.keyword_match || hotspot.title;
-      const result = await verifyContent(hotspot.title, hotspot.summary, keyword);
+
+      // Try DeepSeek AI first, fall back to keyword relevance scoring
+      const aiResult = await verifyContent(hotspot.title, hotspot.summary, keyword);
+      const isAiAvailable = aiResult.reason !== 'AI 未配置，跳过验证';
+
+      // Unified result shape: { score, isRelevant, summary }
+      const score = isAiAvailable ? aiResult.score : calculateRelevance(hotspot.title, hotspot.summary, keyword).score;
+      const summary = isAiAvailable ? aiResult.summary : calculateRelevance(hotspot.title, hotspot.summary, keyword).summary;
+      const isRelevant = isAiAvailable ? aiResult.isRelevant : calculateRelevance(hotspot.title, hotspot.summary, keyword).isRelevant;
+      const isFake = isAiAvailable ? aiResult.isFake : false;
 
       db.prepare(`
         UPDATE hotspots
@@ -32,29 +42,28 @@ export async function verifyPendingHotspots(): Promise<number> {
             is_fake = @isFake
         WHERE id = @id
       `).run({
-        score: result.score,
-        aiSummary: result.summary,
-        isFake: result.isFake ? 1 : 0,
+        score,
+        aiSummary: summary,
+        isFake: isFake ? 1 : 0,
         id: hotspot.id,
       });
 
-      // If relevant and not fake, create notification
-      if (result.isRelevant && !result.isFake) {
+      // Create notification for relevant content
+      if (isRelevant) {
         const notifResult = db.prepare(`
           INSERT INTO notifications (type, title, message, hotspot_id)
           VALUES ('hotspot', @title, @message, @hotspotId)
         `).run({
           title: `🔥 ${hotspot.title}`,
-          message: result.summary || hotspot.summary,
+          message: summary || hotspot.summary,
           hotspotId: hotspot.id,
         });
 
-        // Push via SSE
         sseHub.broadcast('new-hotspot', {
           id: hotspot.id,
           title: hotspot.title,
-          summary: result.summary || hotspot.summary,
-          score: result.score,
+          summary: summary || hotspot.summary,
+          score,
           notificationId: Number(notifResult.lastInsertRowid),
         });
       }

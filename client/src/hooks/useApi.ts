@@ -22,6 +22,11 @@ export const api = {
     }),
   deleteKeyword: (id: number) =>
     request<any>(`/keywords/${id}`, { method: 'DELETE' }),
+  toggleKeyword: (id: number, active: boolean) =>
+    request<any>(`/keywords/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ active: active ? 1 : 0 }),
+    }),
 
   // Hotspots
   getHotspots: (params?: { category?: string; verified?: string; page?: number; limit?: number }) => {

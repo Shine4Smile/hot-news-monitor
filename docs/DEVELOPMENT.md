@@ -103,19 +103,28 @@ const client = new OpenAI({
 
 ### 扩展信息源
 
-编辑 `server/src/services/collector.ts`，新增信息源对象：
+新增数据源只需两步：
+
+1. 创建 `server/src/sources/your-source.ts`，实现 `Source` 接口：
 
 ```typescript
-const NEW_SOURCE = {
-  name: '来源名称',
-  getHotspots: async (): Promise<MockHotspot[]> => [
-    { title: '...', summary: '...', source: '来源名称' },
-  ],
+export const yourSource: Source = {
+  name: '你的源',
+  category: '科技',
+  interval: 1800, // 30 min
+  enabled: true,
+  async fetch(keywords: string[]): Promise<RawHotspot[]> {
+    // 爬取逻辑
+  },
 };
-// 添加到 MOCK_SOURCES 数组
 ```
 
-未来可替换为真实 web 抓取、RSS 订阅或 NewsAPI。
+2. 在 `server/src/sources/registry.ts` 中注册：
+
+```typescript
+import { yourSource } from './your-source.js';
+// 添加到 ALL_SOURCES 数组
+```
 
 ## 定时任务
 
@@ -124,7 +133,31 @@ const NEW_SOURCE = {
 | 热点采集 | 5 分钟 | `COLLECT_INTERVAL_MINUTES` |
 | AI 验证 | 10 分钟 | `VERIFY_INTERVAL_MINUTES` |
 
-定时任务在新热点入库时通过 SSE 实时推送到前端。
+### 采集逻辑（v2 — 关键词驱动）
+
+```
+Cron 触发 → 读取活跃关键词
+  ├─ 关键词为空 → 跳过，不执行任何爬取
+  └─ 有关键词 → 对每个关键词:
+       └─ 搜索全部 6 个数据源
+            ├─ 预过滤器（去低质内容）
+            └─ 入库 + 关联度打分
+```
+
+### 数据源
+
+| # | 源 | 类型 | 频率 | 方式 |
+|---|---|---|---|---|
+| 1 | IT之家 | 科技资讯 | 15 min | cheerio HTML |
+| 2 | 百度热搜 | 综合热点 | 20 min | cheerio HTML |
+| 3 | 微博热搜 | 社会热点 | 20 min | JSON API |
+| 4 | GitHub Trending | 开源热点 | 120 min | cheerio HTML |
+| 5 | Bing 搜索 | 搜索 | 30 min | cheerio HTML |
+| 6 | Solidot | 科技新闻 | 60 min | RSS 2.0 |
+
+- 所有源无需 API Key，HTTP 请求
+- 每次请求间隔 ≥ 5s，带 ±30% 随机抖动
+- 预过滤器：标题<6字、内容<10字、纯符号等自动丢弃
 
 ## 前端样式系统
 
