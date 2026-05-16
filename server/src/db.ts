@@ -41,9 +41,17 @@ export function initDatabase(): void {
       ai_score REAL DEFAULT 0,
       ai_summary TEXT DEFAULT '',
       is_fake INTEGER DEFAULT 0,
+      keyword_mentioned INTEGER DEFAULT 0,
+      importance TEXT DEFAULT 'low',
+      relevance_reason TEXT DEFAULT '',
       published_at TEXT DEFAULT (datetime('now')),
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Add columns if upgrading from older schema
+    ALTER TABLE hotspots ADD COLUMN keyword_mentioned INTEGER DEFAULT 0;
+    ALTER TABLE hotspots ADD COLUMN importance TEXT DEFAULT 'low';
+    ALTER TABLE hotspots ADD COLUMN relevance_reason TEXT DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

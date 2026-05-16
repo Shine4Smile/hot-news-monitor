@@ -22,49 +22,67 @@ function getClient(): OpenAI | null {
 export interface VerifyResult {
   isRelevant: boolean;
   isFake: boolean;
-  score: number;          // 0-100 relevance score
-  summary: string;        // AI-generated summary
-  reason: string;         // explanation
+  score: number;
+  summary: string;
+  reason: string;
+  keywordMentioned: boolean;
+  importance: 'low' | 'medium' | 'high' | 'urgent';
+  relevanceReason: string;
 }
 
 /**
  * Use DeepSeek to verify if a piece of content is genuinely related to the keyword
- * and not fake/spam content.
+ * and not fake/spam content. Output includes importance grading and relevance reasoning.
  */
 export async function verifyContent(
   title: string,
   content: string,
-  keyword: string
+  keyword: string,
+  preMatchHint?: string
 ): Promise<VerifyResult> {
   const ai = getClient();
   if (!ai) {
-    return { isRelevant: true, isFake: false, score: 50, summary: '', reason: 'AI 未配置，跳过验证' };
+    return {
+      isRelevant: true, isFake: false, score: 50, summary: '',
+      reason: 'AI 未配置，跳过验证',
+      keywordMentioned: false, importance: 'low', relevanceReason: '',
+    };
   }
 
-  const systemPrompt = `你是一个专业的内容审核与验证助手。你的任务是：
-1. 判断给定的内容是否**真正与关键词相关**（而非标题党、广告或无关内容）
-2. 判断内容是否可能是**虚假信息**（标题党、虚假新闻、营销软文等）
-3. 给出相关度评分（0-100）
-4. 用1-2句话总结内容要点
+  const matchHint = preMatchHint || '';
 
-请严格以 JSON 格式返回，格式如下：
+  const systemPrompt = `你是一个热点内容精准匹配专家。你的任务是判断一段内容是否与指定的监控关键词【${keyword}】直接相关。
+
+${matchHint}
+
+分析要点：
+1. 判断是否为真实有价值的信息（排除标题党、假新闻、营销软文）
+2. 判断内容是否【直接】涉及关键词"${keyword}"。注意：
+   - 仅仅属于同一领域但未提及关键词的内容，相关性应低于 40 分
+   - 内容必须直接讨论、提及或与"${keyword}"有实质关联才能获得 60 分以上
+   - 只是间接沾边（如同类产品、同领域但不同主题）应给 30-50 分
+3. 判断内容中是否直接提及了"${keyword}"或其等价表述（keywordMentioned）
+4. 评估热点的重要程度（对关注"${keyword}"的人来说有多重要）
+5. 用一句话解释此内容与"${keyword}"的关联
+6. 用一句话解释你的相关性打分理由
+
+请以 JSON 格式输出：
 {
   "isRelevant": true/false,
   "isFake": true/false,
   "score": 0-100,
-  "summary": "1-2句内容总结",
-  "reason": "判断理由简述"
+  "keywordMentioned": true/false,
+  "importance": "low/medium/high/urgent",
+  "summary": "此内容与【${keyword}】的关联：一句话",
+  "relevanceReason": "相关性打分理由：一句话",
+  "reason": "综合判断理由简述"
 }`;
 
-  const userPrompt = `请验证以下内容：
+  const userPrompt = `请验证以下内容是否与【${keyword}】真正相关：
 
-【监控关键词】${keyword}
+【标题】${title}
 
-【内容标题】${title}
-
-【内容正文】${content || '（无正文，仅标题）'}
-
-请判断该内容是否与关键词"${keyword}"真正相关，以及是否为虚假/垃圾信息。`;
+【正文】${content || '（无正文，仅标题）'}`;
 
   try {
     const response = await ai.chat.completions.create({
@@ -80,21 +98,21 @@ export async function verifyContent(
 
     const result = JSON.parse(response.choices[0].message.content || '{}');
     return {
-      isRelevant: result.isRelevant ?? false,
+      isRelevant: result.isRelevant ?? true,
       isFake: result.isFake ?? false,
-      score: result.score ?? 0,
+      score: Math.min(100, Math.max(0, result.score ?? 50)),
       summary: result.summary ?? '',
       reason: result.reason ?? '',
+      keywordMentioned: result.keywordMentioned ?? false,
+      importance: ['low', 'medium', 'high', 'urgent'].includes(result.importance) ? result.importance : 'low',
+      relevanceReason: result.relevanceReason ?? '',
     };
   } catch (err) {
     console.error('DeepSeek API error:', err);
-    // Fallback: mark as unverified rather than failing
     return {
-      isRelevant: true,
-      isFake: false,
-      score: 50,
-      summary: '',
+      isRelevant: true, isFake: false, score: 50, summary: '',
       reason: 'AI verification failed, defaulting to pass',
+      keywordMentioned: false, importance: 'low', relevanceReason: '',
     };
   }
 }
