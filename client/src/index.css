@@ -269,12 +269,77 @@ body {
 
 .disabled\:opacity-30:disabled { opacity: 0.3; }
 .disabled\:opacity-40:disabled { opacity: 0.4; }
+.disabled\:opacity-50:disabled { opacity: 0.5; }
 
 .group:hover .group-hover\:opacity-100 { opacity: 1; }
 .group:hover .group-hover\:text-cyber-neon { color: var(--cyber-neon); }
-.group:hover .group-hover\:border-cyber-pulse\/40 {
-  border-color: color-mix(in srgb, var(--cyber-pulse) 40%, transparent);
-}
+
+/* ============================================================
+   NEW DESIGN COLORS (for migrated frontend)
+   ============================================================ */
+.text-white { color: #fff; }
+.text-slate-400 { color: #94a3b8; }
+.text-slate-500 { color: #64748b; }
+.text-slate-600 { color: #475569; }
+.text-slate-700 { color: #334155; }
+.text-red-400 { color: #f87171; }
+.text-red-500 { color: #ef4444; }
+.text-emerald-400 { color: #34d399; }
+.text-emerald-500 { color: #10b981; }
+.text-orange-400 { color: #fb923c; }
+.text-amber-400 { color: #fbbf24; }
+
+.bg-white { background-color: #fff; }
+.bg-white\/5 { background-color: rgba(255,255,255,0.05); }
+.bg-white\/10 { background-color: rgba(255,255,255,0.1); }
+.bg-white\/\[0\.02\] { background-color: rgba(255,255,255,0.02); }
+.bg-white\/\[0\.04\] { background-color: rgba(255,255,255,0.04); }
+.bg-red-500 { background-color: #ef4444; }
+.bg-red-500\/10 { background-color: rgba(239,68,68,0.1); }
+.bg-red-500\/15 { background-color: rgba(239,68,68,0.15); }
+.bg-orange-500\/15 { background-color: rgba(249,115,22,0.15); }
+.bg-amber-500\/15 { background-color: rgba(245,158,11,0.15); }
+.bg-emerald-500 { background-color: #10b981; }
+.bg-emerald-500\/10 { background-color: rgba(16,185,129,0.1); }
+.bg-slate-700 { background-color: #334155; }
+.bg-cyber-neon\/5 { background-color: rgba(0,240,255,0.05); }
+.bg-cyber-neon\/10 { background-color: rgba(0,240,255,0.1); }
+.bg-cyber-neon\/15 { background-color: rgba(0,240,255,0.15); }
+.bg-cyber-neon\/20 { background-color: rgba(0,240,255,0.2); }
+
+.border-white\/5 { border-color: rgba(255,255,255,0.05); }
+.border-white\/10 { border-color: rgba(255,255,255,0.1); }
+.border-red-500\/20 { border-color: rgba(239,68,68,0.2); }
+.border-red-500\/30 { border-color: rgba(239,68,68,0.3); }
+.border-orange-500\/20 { border-color: rgba(249,115,22,0.2); }
+.border-amber-500\/20 { border-color: rgba(245,158,11,0.2); }
+.border-emerald-500\/30 { border-color: rgba(16,185,129,0.3); }
+.border-cyber-neon\/30 { border-color: rgba(0,240,255,0.3); }
+.border-cyber-neon\/20 { border-color: rgba(0,240,255,0.2); }
+.border-cyber-neon\/50 { border-color: rgba(0,240,255,0.5); }
+
+.hover\:bg-white\/5:hover { background-color: rgba(255,255,255,0.05); }
+.hover\:bg-white\/10:hover { background-color: rgba(255,255,255,0.1); }
+.hover\:bg-cyber-neon\/20:hover { background-color: rgba(0,240,255,0.2); }
+.hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(255,255,255,0.04); }
+.hover\:text-white:hover { color: #fff; }
+.hover\:text-slate-300:hover { color: #cbd5e1; }
+.hover\:text-slate-400:hover { color: #94a3b8; }
+.hover\:text-cyber-neon:hover { color: var(--cyber-neon); }
+.hover\:text-red-400:hover { color: #f87171; }
+
+.focus\:border-cyber-neon\/50:focus { border-color: rgba(0,240,255,0.5); }
+
+.placeholder-slate-500::placeholder { color: #64748b; }
+
+.border-dashed { border-style: dashed; }
+.border-t-cyber-neon { border-top-color: var(--cyber-neon); }
+
+.-translate-x-1\/2 { transform: translateX(-50%); }
+.translate-x-1\/2 { transform: translateX(50%); }
+
+.animate-spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ============================================================
    POSITIONING
