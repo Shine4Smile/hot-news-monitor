@@ -56,8 +56,8 @@ export async function searchByKeyword(keyword: string): Promise<CollectedHotspot
  */
 export function saveHotspots(hotspots: CollectedHotspot[], keywordMatch = ''): number[] {
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO hotspots (title, summary, source, source_url, keyword_match, category, published_at)
-    VALUES (@title, @summary, @source, @sourceUrl, @keywordMatch, @category, datetime('now'))
+    INSERT OR IGNORE INTO hotspots (title, summary, source, source_url, keyword_match, category, view_count, like_count, comment_count, published_at)
+    VALUES (@title, @summary, @source, @sourceUrl, @keywordMatch, @category, @viewCount, @likeCount, @commentCount, COALESCE(@publishedAt, datetime('now')))
   `);
 
   const ids: number[] = [];
@@ -71,6 +71,10 @@ export function saveHotspots(hotspots: CollectedHotspot[], keywordMatch = ''): n
         sourceUrl: h.sourceUrl,
         keywordMatch,
         category: h.category,
+        viewCount: h.viewCount || 0,
+        likeCount: h.likeCount || 0,
+        commentCount: h.commentCount || 0,
+        publishedAt: h.publishedAt || null,
       });
       if (result.changes > 0) {
         ids.push(Number(result.lastInsertRowid));

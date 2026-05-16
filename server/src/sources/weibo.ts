@@ -29,6 +29,7 @@ export const weiboHotSource: Source = {
       sourceUrl: item.word_scheme
         ? `https://s.weibo.com/weibo?q=${encodeURIComponent(item.word)}`
         : `https://s.weibo.com/weibo?q=${encodeURIComponent(item.word || '')}`,
+      likeCount: item.num || item.raw_hot || 0,
     }));
   },
 };

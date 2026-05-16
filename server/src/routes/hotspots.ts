@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { verifySingleHotspot } from '../services/verifier.js';
+import { sortHotspots } from '../utils/sort-hotspots.js';
 
 const router = Router();
 
-// List hotspots with filters
+// List hotspots with filters and sorting
 router.get('/', (req, res) => {
-  const { category, verified, page = '1', limit = '20' } = req.query;
+  const { category, verified, source, sortBy = 'created_at', sortOrder = 'desc', page = '1', limit = '12' } = req.query;
   const offset = (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10);
 
   let where = 'WHERE 1=1';
@@ -21,11 +22,21 @@ router.get('/', (req, res) => {
   } else if (verified === '0') {
     where += ' AND ai_verified = 0';
   }
+  if (source) {
+    where += ' AND source = ?';
+    params.push(source);
+  }
 
   const total = (db.prepare(`SELECT COUNT(*) as count FROM hotspots ${where}`).get(...params) as any).count;
-  const hotspots = db.prepare(
+  
+  const rawHotspots = db.prepare(
     `SELECT * FROM hotspots ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
   ).all(...params, parseInt(limit as string, 10), offset);
+
+  // Apply server-side sort for non-default sort fields
+  const hotspots = sortBy === 'created_at'
+    ? rawHotspots
+    : sortHotspots(rawHotspots as any, sortBy as string, sortOrder as 'asc' | 'desc');
 
   res.json({ data: hotspots, total, page: parseInt(page as string, 10), limit: parseInt(limit as string, 10) });
 });

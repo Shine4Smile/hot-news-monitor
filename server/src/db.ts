@@ -44,14 +44,17 @@ export function initDatabase(): void {
       keyword_mentioned INTEGER DEFAULT 0,
       importance TEXT DEFAULT 'low',
       relevance_reason TEXT DEFAULT '',
+      view_count INTEGER DEFAULT 0,
+      like_count INTEGER DEFAULT 0,
+      comment_count INTEGER DEFAULT 0,
       published_at TEXT DEFAULT (datetime('now')),
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Add columns if upgrading from older schema
-    ALTER TABLE hotspots ADD COLUMN keyword_mentioned INTEGER DEFAULT 0;
-    ALTER TABLE hotspots ADD COLUMN importance TEXT DEFAULT 'low';
-    ALTER TABLE hotspots ADD COLUMN relevance_reason TEXT DEFAULT '';
+    -- Add columns if upgrading from older schema (ignore errors if already exist)
+    DROP TABLE IF EXISTS _migration_check;
+    CREATE TABLE IF NOT EXISTS _migration_check (done INTEGER);
+    INSERT INTO _migration_check SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM _migration_check);
 
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

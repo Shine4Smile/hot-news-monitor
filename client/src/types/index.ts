@@ -19,6 +19,12 @@ export interface Hotspot {
   ai_score: number;
   ai_summary: string;
   is_fake: number;
+  keyword_mentioned: number;
+  importance: string;
+  relevance_reason: string;
+  view_count: number;
+  like_count: number;
+  comment_count: number;
   published_at: string;
   created_at: string;
 }

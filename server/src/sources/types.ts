@@ -4,6 +4,9 @@ export interface RawHotspot {
   summary: string;
   sourceUrl: string;
   publishedAt?: string;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
 }
 
 /** External hotspot after collection, ready for DB */
@@ -13,6 +16,10 @@ export interface CollectedHotspot {
   source: string;
   sourceUrl: string;
   category: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  publishedAt?: string;
 }
 
 /** Source module interface */

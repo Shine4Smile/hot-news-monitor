@@ -101,6 +101,10 @@ export async function collectFromAllSources(keywords: string[]): Promise<Collect
             source: source.name,
             sourceUrl: item.sourceUrl,
             category: source.category,
+            viewCount: item.viewCount || 0,
+            likeCount: item.likeCount || 0,
+            commentCount: item.commentCount || 0,
+            publishedAt: item.publishedAt,
           });
         }
 

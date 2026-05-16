@@ -28,11 +28,14 @@ export const githubTrendingSource: Source = {
       const title = $(el).find('h2 a').text().replace(/\s+/g, ' ').trim();
       const desc = $(el).find('p').text().trim();
       const href = $(el).find('h2 a').attr('href') || '';
+      const starsText = $(el).find('.d-inline-block.float-sm-right, .Link--muted').first().text().replace(/,/g, '').trim();
+      const stars = parseInt(starsText, 10) || 0;
       if (title) {
         items.push({
           title,
           summary: desc || title,
           sourceUrl: `https://github.com${href}`,
+          likeCount: stars,
         });
       }
     });
